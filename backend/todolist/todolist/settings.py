@@ -49,7 +49,11 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PERMISSION_CLASSES': (
          'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly',
-        'rest_framework.permissions.IsAuthenticated', )
+        'rest_framework.permissions.IsAuthenticated', ),
+        
+ 'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ]
 }
 
 # CORS settings
@@ -57,6 +61,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React app running on port 3000
     "http://127.0.0.1:3000"
 ]
+
+CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be included in CORS requests
 MIDDLEWARE = [
    
     'corsheaders.middleware.CorsMiddleware',

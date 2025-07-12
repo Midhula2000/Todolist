@@ -13,6 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 import csv
 import io
 import json
+from datetime import datetime
 
 # Create your views here.
 @api_view(['POST'])
@@ -80,11 +81,27 @@ def addtask(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 
+
 def gettasks(request):
     user_id = request.user.id
-    tasks = Todolist.objects.filter(user_id=user_id)
-    task_list = [{'id': task.id, 'task': task.task, 'due_date': task.due_date,'status': task.status
-} for task in tasks]
+    now = datetime.now()
+
+    # Filter upcoming tasks (due today or future), ordered by due_date
+    tasks = Todolist.objects.filter(user_id=user_id, due_date__gte=now).order_by('due_date')
+
+    if not tasks.exists():
+        return Response({'message': 'No upcoming tasks found'}, status=HTTP_404_NOT_FOUND)
+
+    task_list = [
+        {
+            'id': task.id,
+            'task': task.task,
+            'due_date': task.due_date,
+            'status': task.status
+        }
+        for task in tasks
+    ]
+
     return Response({'tasks': task_list}, status=HTTP_200_OK)
 
 @api_view(['GET'])
@@ -251,59 +268,46 @@ def import_tasks(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])  
-def export_tasks(request):
-    user_id = request.user.id
-    format = request.GET.get('format', 'json').strip().lower()
 
-    print("Export format:", request.GET.get('format'))
-    tasks = Todolist.objects.filter(user_id=user_id)
+def export_tasks(request, file_format):
+    print(file_format)
+    user = request.user  # assuming the user is authenticated
+    tasks = Todolist.objects.filter(user=user).values('task', 'due_date', 'status')
 
-    if not tasks.exists():
-        return JsonResponse({'error': 'No tasks to export'}, status=HTTP_400_BAD_REQUEST)
-
-    if format == 'json':
-        task_list = [
-            {
-                'task': task.task,
-                'due_date': str(task.due_date),
-                'status': task.status
-            }
-            for task in tasks
-        ]
-        response = JsonResponse(task_list, safe=False)
-        response['Content-Disposition'] = 'attachment; filename="tasks.json"'
+    if file_format == 'json':
+        response = HttpResponse(json.dumps(list(tasks), default=str), content_type='application/json')
+        response['Content-Disposition'] = 'attachment; filename=tasks.json'
         return response
 
-    elif format == 'csv':
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['Task', 'Due Date', 'Status'])  # Include header with status
+    elif file_format == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename=tasks.csv'
+        writer = csv.writer(response)
+        writer.writerow(['Task', 'Due Date', 'Status'])
         for task in tasks:
-            writer.writerow([task.task, task.due_date, task.status])
-        response = HttpResponse(output.getvalue(), content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="tasks.csv"'
+            due_date = task['due_date']
+            due_str = due_date.strftime('%d-%m-%Y') if due_date else ''
+            writer.writerow([task['task'], due_str, task['status']])
+        return response  # ← Move return outside the loop
+
+    elif file_format == 'txt':
+        response = HttpResponse(content_type='text/plain')
+        response['Content-Disposition'] = 'attachment; filename=tasks.txt'
+        for task in tasks:
+            due_date = task['due_date']
+            due_str = due_date.strftime('%d-%m-%Y') if due_date else 'No Due Date'
+            response.write(f"{task['task']} | {due_str} | {task['status']}\n")
         return response
 
-    elif format == 'txt':
-        output = io.StringIO()
+    elif file_format == 'sql':
+        response = HttpResponse(content_type='text/sql')
+        response['Content-Disposition'] = 'attachment; filename=tasks.sql'
         for task in tasks:
-            output.write(f"Task: {task.task}\n")
-            output.write(f"Due: {task.due_date}\n")
-            output.write(f"Status: {task.status}\n\n")
-        response = HttpResponse(output.getvalue(), content_type='text/plain')
-        response['Content-Disposition'] = 'attachment; filename="tasks.txt"'
-        return response
-
-    elif format == 'sql':
-        output = io.StringIO()
-        for task in tasks:
-            task_str = task.task.replace("'", "''")  # escape single quotes
-            output.write(
-                f"INSERT INTO tasks (task, due_date, status) VALUES ('{task_str}', '{task.due_date}', '{task.status}');\n"
-            )
-        response = HttpResponse(output.getvalue(), content_type='text/sql')
-        response['Content-Disposition'] = 'attachment; filename="tasks.sql"'
+            due_date = task['due_date']
+            due_str = f"'{due_date.strftime('%Y-%m-%d')}'" if due_date else 'NULL'
+            sql = f"INSERT INTO todolist (task, due_date, status) VALUES ('{task['task']}', {due_str}, '{task['status']}');\n"
+            response.write(sql)
         return response
 
     else:
-        return JsonResponse({'error': 'Unsupported export format'}, status=HTTP_400_BAD_REQUEST)
+        return HttpResponse("Unsupported file_format", status=400)

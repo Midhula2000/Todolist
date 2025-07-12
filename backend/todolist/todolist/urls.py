@@ -29,7 +29,6 @@ urlpatterns = [
    path('edittask', views.edit_task),  
     path('deletetask', views.delete_task),
    path('importtasks', views.import_tasks),
-    path('exporttasks/', views.export_tasks),
-   
-   
+   path('export/<str:file_format>/', views.export_tasks, name='export_tasks'),
 ]
+
