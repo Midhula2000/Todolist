@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',  # Add this line to include CORS headers
+    'adminapp',
 ]
 
 REST_FRAMEWORK = {

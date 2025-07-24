@@ -15,7 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
-from django.urls import path
+from django.urls import path,include
 from todo import views
 
 urlpatterns = [
@@ -30,5 +30,7 @@ urlpatterns = [
     path('deletetask', views.delete_task),
    path('importtasks', views.import_tasks),
    path('export/<str:file_format>/', views.export_tasks, name='export_tasks'),
+
+   path('admin/',include('adminapp.urls'))
 ]
 

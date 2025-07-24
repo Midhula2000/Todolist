@@ -11,13 +11,19 @@ class UserManager(BaseUserManager):
             user.set_password(password) 
             user.save(using=self._db) 
             return user 
-     
+      
+      def create_superuser(self, email, password): 
+        user = self.create_user(email, password) 
+        user.is_admin = True 
+        User.is_superuser = True 
+        user.save(using=self._db) 
+        return user
  
 class User(AbstractBaseUser): 
     email = models.EmailField(unique=True) 
     name = models.CharField(max_length =255) 
     is_active = models.BooleanField(default=True) 
-  
+    is_admin = models.BooleanField(default=False)
     
     objects = UserManager() 
  
@@ -34,3 +40,4 @@ class Todolist(models.Model):
         ], default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+  
