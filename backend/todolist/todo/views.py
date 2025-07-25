@@ -13,7 +13,8 @@ from rest_framework.permissions import IsAuthenticated
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+from .models import UserActivity 
 
 # Create your views here.
 @api_view(['POST'])
@@ -80,14 +81,12 @@ def addtask(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-
-
 def gettasks(request):
     user_id = request.user.id
-    now = datetime.now()
+    now = timezone.now()
 
-    # Filter upcoming tasks (due today or future), ordered by due_date
-    tasks = Todolist.objects.filter(user_id=user_id, due_date__gte=now).order_by('due_date')
+    # Filter upcoming tasks and order by latest due date first
+    tasks = Todolist.objects.filter(user_id=user_id, due_date__gte=now).order_by('-due_date')
 
     if not tasks.exists():
         return Response({'message': 'No upcoming tasks found'}, status=HTTP_404_NOT_FOUND)
@@ -103,6 +102,7 @@ def gettasks(request):
     ]
 
     return Response({'tasks': task_list}, status=HTTP_200_OK)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -192,7 +192,6 @@ def delete_task(request):
     except Todolist.DoesNotExist:
         return Response({'error': 'Task not found'}, status=HTTP_404_NOT_FOUND)
     
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])  
 def import_tasks(request):
@@ -240,7 +239,12 @@ def import_tasks(request):
                     elif line.startswith('Due:'): due = line[4:].strip()
                     elif line.startswith('Completed:'): completed = 'yes' in line.lower()
                 if task and due:
-                    Todolist.objects.create(user=request.user, task=task, due_date=due, status='completed' if completed else 'pending')
+                    Todolist.objects.create(
+                        user=request.user, 
+                        task=task, 
+                        due_date=due, 
+                        status='completed' if completed else 'pending'
+                    )
                     imported += 1
 
         elif ext == 'sql':
@@ -260,19 +264,34 @@ def import_tasks(request):
         else:
             return Response({'error': 'Unsupported file type'}, status=HTTP_400_BAD_REQUEST)
 
-        return Response({'message': f'{imported} tasks imported successfully'}, status=HTTP_200_OK)
-
     except Exception as e:
         return Response({'error': f'Import failed: {str(e)}'}, status=HTTP_400_BAD_REQUEST)
-    
+
+    # Record user activity and send success response
+    if imported > 0:
+        UserActivity.objects.create(
+            user=request.user,
+            action_type='import',
+            task_count=imported
+        )
+        return Response({'message': f'{imported} tasks imported successfully'}, status=HTTP_200_OK)
+
+    return Response({'error': 'No tasks were imported'}, status=HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])  
-
+@permission_classes([IsAuthenticated])
 def export_tasks(request, file_format):
-    print(file_format)
-    user = request.user  # assuming the user is authenticated
+    user = request.user  
     tasks = Todolist.objects.filter(user=user).values('task', 'due_date', 'status')
+
+    # Log export action
+    task_count = tasks.count()
+    if task_count > 0:
+        UserActivity.objects.create(
+            user=user,
+            action_type='export',
+            task_count=task_count
+        )
 
     if file_format == 'json':
         response = HttpResponse(json.dumps(list(tasks), default=str), content_type='application/json')
@@ -288,7 +307,7 @@ def export_tasks(request, file_format):
             due_date = task['due_date']
             due_str = due_date.strftime('%d-%m-%Y') if due_date else ''
             writer.writerow([task['task'], due_str, task['status']])
-        return response  # ← Move return outside the loop
+        return response
 
     elif file_format == 'txt':
         response = HttpResponse(content_type='text/plain')
@@ -305,7 +324,7 @@ def export_tasks(request, file_format):
         for task in tasks:
             due_date = task['due_date']
             due_str = f"'{due_date.strftime('%Y-%m-%d')}'" if due_date else 'NULL'
-            sql = f"INSERT INTO todolist (task, due_date, status) VALUES ('{task['task']}', {due_str}, '{task['status']}');\n"
+            sql = f"INSERT INTO todolist (task, due_date, status) VALUES ('{task['task'].replace("'", "''")}', {due_str}, '{task['status']}');\n"
             response.write(sql)
         return response
 

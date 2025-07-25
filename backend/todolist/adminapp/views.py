@@ -9,9 +9,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.http import HttpResponse, JsonResponse
-from todo.models import  User
+from todo.models import  User,Todolist, UserActivity
 from django.utils.dateparse import parse_date
-
+from django.core.paginator import Paginator
+from django.db.models import F, Sum
 
 @csrf_exempt
 @api_view(['POST'])
@@ -63,9 +64,43 @@ def user_report(request):
     return Response(data, status=HTTP_200_OK)
 
 
-# @csrf_exempt
-# @api_view(['GET'])  
-# @permission_classes([IsAuthenticated])
-# def user_report_count(request):
-   
-     
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_usage_report(request):
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 6))
+
+    report = []
+
+    for user in User.objects.all():
+        total_tasks = Todolist.objects.filter(user=user).count()
+        completed_tasks = Todolist.objects.filter(user=user, status='completed').count()
+        edited_tasks = Todolist.objects.filter(user=user).exclude(created_at=F('updated_at')).count()
+
+        # Aggregate import/export task counts
+        exported = UserActivity.objects.filter(user=user, action_type='export').aggregate(total=Sum('task_count'))['total'] or 0
+        imported = UserActivity.objects.filter(user=user, action_type='import').aggregate(total=Sum('task_count'))['total'] or 0
+
+        report.append({
+            'name': user.name,
+            'email': user.email,
+            'total_tasks': total_tasks,
+            'completed_tasks': completed_tasks,
+            'edited_tasks': edited_tasks,
+            'deleted_tasks': 0,        # Still a placeholder
+            'exported_count': exported,
+            'imported_count': imported,
+        })
+
+    # Sort by total tasks (descending)
+    report.sort(key=lambda x: x['total_tasks'], reverse=True)
+
+    # Paginate
+    paginator = Paginator(report, page_size)
+    page_obj = paginator.get_page(page)
+
+    return Response({
+        'results': list(page_obj),
+        'total_pages': paginator.num_pages,
+        'current_page': page_obj.number,
+    }, status=HTTP_200_OK)

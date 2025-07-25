@@ -42,3 +42,16 @@ class Todolist(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
   
+
+
+class UserActivity(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    action_type = models.CharField(max_length=20, choices=[
+        ('export', 'Export'),
+        ('import', 'Import')
+    ])
+    task_count = models.IntegerField(default=0) 
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.action_type} ({self.task_count} tasks)"
